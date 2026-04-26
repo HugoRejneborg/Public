@@ -89,7 +89,7 @@ table.logtable tr:nth-child(even) td { background: #f8fafc; }
   </div>
   <div class="row">
     <label>Heltidsmått (h/vecka)</label>
-    <input type="number" id="heltid" value="40" min="1" max="60" step="1" oninput="onGrundChanged()">
+    <input type="number" id="heltid" value="40" min="1" max="60" step="1" oninput="onGrundChanged()" onchange="onHeltidCommit()">
     <span class="unit">h/v</span>
   </div>
   <div class="row">
@@ -239,6 +239,13 @@ function clampField(el, min, max) {
   if (isNaN(raw)) return;
   const clamped = Math.max(min, Math.min(max, raw));
   if (raw !== clamped) el.value = clamped;
+}
+
+function onHeltidCommit() {
+  // Vid blur: om användaren lämnat heltid tomt, återställ visuellt till 40
+  // så att fältet matchar det värde kalkylen faktiskt använder (silent fallback).
+  const el = document.getElementById('heltid');
+  if (el.value === '') el.value = 40;
 }
 
 function onGrundChanged() {
@@ -617,6 +624,11 @@ function sparaLogg() {
     }
     if (isNaN(faktiskH) && isNaN(franvaroPct)) {
       alert('Fyll i timmar eller frånvaro% innan du sparar.');
+      return;
+    }
+    // Spegla calc()-validering: blockera spara när värdena är utanför tillåtet intervall
+    if (faktiskH < 0 || faktiskH > sch + 0.05 || franvaroPct < 0 || franvaroPct > 100) {
+      alert('Värdet är ogiltigt — rätta inmatningen innan du sparar.');
       return;
     }
   }
