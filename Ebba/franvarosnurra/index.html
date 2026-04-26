@@ -182,6 +182,12 @@ const typer = ['Tjänstledighet','Föräldraledighet','Sjukdom','VAB','Annan'];
 
 function fd(n, dec=1) { return isNaN(n) || n === null ? '—' : Number(n).toFixed(dec).replace('.', ','); }
 
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function clamp01pct(n) { return Math.max(0, Math.min(100, n)); }
+
 // Formaterar ett antal timmar som "X tim Y min" när det finns minuter,
 // annars bara "X tim". Returnerar '—' om värdet saknas.
 function fhm(n) {
@@ -239,7 +245,7 @@ function getSchemaEfterKanda() {
   const heltidRaw = parseFloat(document.getElementById('heltid').value);
   const grundpctRaw = parseFloat(document.getElementById('grundpct').value);
   const heltid = (!isNaN(heltidRaw) && heltidRaw > 0) ? heltidRaw : 40;
-  const grundpct = !isNaN(grundpctRaw) ? grundpctRaw : 0;
+  const grundpct = !isNaN(grundpctRaw) ? clamp01pct(grundpctRaw) : 0;
   const grundH = heltid * grundpct / 100;
   let schema = grundH;
   if (mode === 'flera') {
@@ -327,7 +333,10 @@ function uppdateraKandTyp(id, val) {
 
 function uppdateraKandPct(id, val) {
   const lager = kandaLager.find(l => l.id === id);
-  if (lager) lager.pct = parseFloat(val) || 0;
+  if (lager) {
+    const raw = parseFloat(val);
+    lager.pct = isNaN(raw) ? 0 : clamp01pct(raw);
+  }
   // Uppdatera andelsvisningen direkt (utan att re-rendera hela lager-rutan, som skulle tappa fokus)
   const andelSpan = document.getElementById('andel-' + id);
   if (andelSpan && lager) andelSpan.textContent = '= andel ' + fd((lager.pct || 0) / 100, 3);
@@ -343,12 +352,13 @@ function fromTimmar() {
   const tEl = document.getElementById('faktiskH');
   const pEl = document.getElementById('franvaroPctInp');
   tEl.classList.add('manual-override');
+  pEl.classList.remove('manual-override');
   document.getElementById('badge-tim').style.display = 'none';
   document.getElementById('badge-pct').style.display = 'none';
   const timVal = tEl.value;
   if (timVal === '') {
     pEl.value = '';
-    pEl.classList.remove('manual-override');
+    tEl.classList.remove('manual-override');
   } else {
     const { schema } = getSchemaEfterKanda();
     const h = parseFloat(timVal);
@@ -369,12 +379,13 @@ function fromPct() {
   const tEl = document.getElementById('faktiskH');
   const pEl = document.getElementById('franvaroPctInp');
   pEl.classList.add('manual-override');
+  tEl.classList.remove('manual-override');
   document.getElementById('badge-tim').style.display = 'none';
   document.getElementById('badge-pct').style.display = 'none';
   const pctVal = pEl.value;
   if (pctVal === '') {
     tEl.value = '';
-    tEl.classList.remove('manual-override');
+    pEl.classList.remove('manual-override');
   } else {
     const { schema } = getSchemaEfterKanda();
     const p = parseFloat(pctVal);
@@ -433,7 +444,21 @@ function calc() {
     pEl.classList.remove('input-error');
     hideWarning();
 
-    if (timVal !== '') {
+    // Källfältet är det som har manual-override; faller tillbaka till tEl när inget är markerat.
+    const sourceIsPct = pEl.classList.contains('manual-override') && pctVal !== '';
+    const sourceIsTim = tEl.classList.contains('manual-override') && timVal !== '';
+
+    if (sourceIsPct) {
+      franvaroPct = parseFloat(pctVal);
+      faktiskH = sch * (1 - franvaroPct / 100);
+      if (franvaroPct > 100) {
+        pEl.classList.add('input-error');
+        showWarning('Frånvaro% kan inte vara över 100.');
+      } else if (franvaroPct < 0) {
+        pEl.classList.add('input-error');
+        showWarning('Frånvaro% kan inte vara negativt.');
+      }
+    } else if (sourceIsTim || timVal !== '') {
       faktiskH = parseFloat(timVal);
       franvaroPct = sch > 0 ? (sch - faktiskH) / sch * 100 : NaN;
       if (faktiskH > sch + 0.05) {
@@ -446,13 +471,6 @@ function calc() {
     } else if (pctVal !== '') {
       franvaroPct = parseFloat(pctVal);
       faktiskH = sch * (1 - franvaroPct / 100);
-      if (franvaroPct > 100) {
-        pEl.classList.add('input-error');
-        showWarning('Frånvaro% kan inte vara över 100.');
-      } else if (franvaroPct < 0) {
-        pEl.classList.add('input-error');
-        showWarning('Frånvaro% kan inte vara negativt.');
-      }
     }
   }
 
@@ -604,7 +622,7 @@ function renderLogg() {
       : `<strong>${isNaN(r.franvaroPct) ? '—' : fd(r.franvaroPct) + '%'}</strong>`;
     return `
     <tr>
-      <td>${r.namn}${r.lagerInfo ? '<br><span style="font-size:11px;color:#999">' + r.lagerInfo + '</span>' : ''}</td>
+      <td>${escapeHtml(r.namn)}${r.lagerInfo ? '<br><span style="font-size:11px;color:#999">' + escapeHtml(r.lagerInfo) + '</span>' : ''}</td>
       <td>${fd(r.grundpct)}%</td>
       <td>${timText}</td>
       <td>${franvaroCell}</td>
